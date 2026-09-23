@@ -1,0 +1,24 @@
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public interface PositionRepository extends JpaRepository<Position, PositionId> {
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query(value = "MERGE INTO position p " +
+                   "USING (SELECT :accountId AS acc_id, :currency AS curr FROM dual) src " +
+                   "ON (p.account_id = src.acc_id AND p.currency = src.curr) " +
+                   "WHEN MATCHED THEN " +
+                   "  UPDATE SET p.balance = p.balance + :amount " +
+                   "WHEN NOT MATCHED THEN " +
+                   "  INSERT (account_id, currency, balance) VALUES (:accountId, :currency, :amount)", 
+           nativeQuery = true)
+    int upsertPositionBalance(
+        @Param("accountId") Long accountId, 
+        @Param("currency") String currency, 
+        @Param("amount") double amount
+    );
+}
