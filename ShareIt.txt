@@ -39,3 +39,73 @@ END;
 
 I am reading and writing a oracle table in spring data jpa in spring boot 4.1.1 and java 25. Spring data envers also enabled. It has a composite key with embeddable id. I either insert or update row along with other dml queries in transactional mode. I read the row alone. Request should wait till another read or write releases if row with embeddable id exists. How to do it.
 
+
+package com.example.admin.config;
+
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
+import org.springframework.security.config.Customizer;
+import org.springframework.security.config.web.server.ServerHttpSecurity;
+import org.springframework.security.web.server.SecurityWebFilterChain;
+import org.springframework.security.web.server.csrf.CookieServerCsrfTokenRepository;
+import org.springframework.security.web.server.csrf.CsrfWebFilter;
+import org.springframework.security.web.server.util.matcher.ServerWebExchangeMatcher;
+
+@Configuration
+public class SecurityConfig {
+
+    @Bean
+    public SecurityWebFilterChain securityWebFilterChain(
+            ServerHttpSecurity http) {
+
+        return http
+            .authorizeExchange(exchanges -> exchanges
+                .pathMatchers("/login", "/assets/**").permitAll()
+                .anyExchange().authenticated()
+            )
+            .formLogin(Customizer.withDefaults())
+            .csrf(csrf -> csrf
+                .csrfTokenRepository(
+                    CookieServerCsrfTokenRepository.withHttpOnlyFalse()
+                )
+                .requireCsrfProtectionMatcher(
+                    sbaCsrfProtectionMatcher()
+                )
+            )
+            .build();
+    }
+
+    private ServerWebExchangeMatcher sbaCsrfProtectionMatcher() {
+        return exchange -> {
+            HttpMethod method = exchange.getRequest().getMethod();
+            String path = exchange.getRequest()
+                    .getPath()
+                    .pathWithinApplication()
+                    .value();
+
+            // Safe HTTP methods do not require CSRF tokens.
+            if (method == HttpMethod.GET
+                    || method == HttpMethod.HEAD
+                    || method == HttpMethod.OPTIONS
+                    || method == HttpMethod.TRACE) {
+                return ServerWebExchangeMatcher.MatchResult.notMatch();
+            }
+
+            // Exempt SBA client registration.
+            if (method == HttpMethod.POST
+                    && path.equals("/instances")) {
+                return ServerWebExchangeMatcher.MatchResult.notMatch();
+            }
+
+            // Exempt SBA client deregistration.
+            if (method == HttpMethod.DELETE
+                    && path.matches("/instances/[^/]+")) {
+                return ServerWebExchangeMatcher.MatchResult.notMatch();
+            }
+
+            // All other unsafe requests require CSRF protection.
+            return ServerWebExchangeMatcher.MatchResult.match();
+        };
+    }
+}
