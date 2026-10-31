@@ -1,0 +1,44 @@
+@Configuration
+public class SecurityConfig {
+
+    private final AdminServerProperties adminServer;
+
+    public SecurityConfig(AdminServerProperties adminServer) {
+        this.adminServer = adminServer;
+    }
+
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+        SavedRequestAwareAuthenticationSuccessHandler successHandler =
+                new SavedRequestAwareAuthenticationSuccessHandler();
+        successHandler.setTargetUrlParameter("redirectTo");
+        successHandler.setDefaultTargetUrl(adminServer.path("/"));
+
+        http
+            .authorizeHttpRequests(auth -> auth
+                .requestMatchers(PathPatternRequestMatcher.withDefaults()
+                    .matcher(adminServer.path("/assets/**")))
+                    .permitAll()
+                .requestMatchers(PathPatternRequestMatcher.withDefaults()
+                    .matcher(adminServer.path("/login")))
+                    .permitAll()
+                .requestMatchers(PathPatternRequestMatcher.withDefaults()
+                    .matcher(adminServer.path("/actuator/info")))
+                    .permitAll()
+                .requestMatchers(PathPatternRequestMatcher.withDefaults()
+                    .matcher(adminServer.path("/actuator/health")))
+                    .permitAll()
+                .anyRequest().authenticated()
+            )
+            .formLogin(form -> form
+                .loginPage(adminServer.path("/login"))
+                .successHandler(successHandler)
+            )
+            .logout(logout -> logout
+                .logoutUrl(adminServer.path("/logout"))
+            )
+            .httpBasic(Customizer.withDefaults());
+
+        return http.build();
+    }
+}
