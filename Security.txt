@@ -42,3 +42,12 @@ public class SecurityConfig {
         return http.build();
     }
 }
+
+.csrf(csrf -> csrf
+            .csrfTokenRepository(
+                CookieServerCsrfTokenRepository.withHttpOnlyFalse()
+            )
+            .requireCsrfProtectionMatcher(
+                ServerWebExchangeMatchers.csrfMatcher()
+            )
+        )
