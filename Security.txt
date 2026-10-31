@@ -51,3 +51,15 @@ public class SecurityConfig {
                 ServerWebExchangeMatchers.csrfMatcher()
             )
         )
+
+
+
+
+.csrf(c -> c
+                .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
+                .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler())
+                .ignoringRequestMatchers(
+                    m.matcher(HttpMethod.POST, adminServer.path("/instances")),
+                    m.matcher(HttpMethod.DELETE, adminServer.path("/instances/*")),
+                    m.matcher(adminServer.path("/actuator/**"))));
+
