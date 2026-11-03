@@ -22,3 +22,9 @@
     </form>
 </body>
 </html>
+
+
+<form th:action="@{/otp/generate}" method="post">
+    <input type="hidden" name="username" th:value="${#authentication.name}" />
+    <button type="submit">Generate new OTP</button>
+</form>
