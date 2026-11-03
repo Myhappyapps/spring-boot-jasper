@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <title>OTP Verification</title>
+</head>
+<body>
+    <h2>Step 2: Enter OTP</h2>
+
+    <div th:if="${param.error}">
+        <p style="color: red;">Invalid or expired OTP.</p>
+    </div>
+
+    <form th:action="@{/otp/login}" method="post">
+        <label>One-time code</label><br/>
+        <input type="text" name="token" value="123456" /><br/><br/>
+
+        <button type="submit">Verify</button>
+    </form>
+
+    <form th:action="@{/otp/generate}" method="post">
+        <button type="submit">Generate new OTP</button>
+    </form>
+</body>
+</html>
