@@ -1,0 +1,61 @@
+package com.example.demo;
+
+import java.time.Instant;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
+import org.springframework.security.authentication.ott.DefaultOneTimeToken;
+import org.springframework.security.authentication.ott.GenerateOneTimeTokenRequest;
+import org.springframework.security.authentication.ott.OneTimeToken;
+import org.springframework.security.authentication.ott.OneTimeTokenAuthenticationToken;
+import org.springframework.security.authentication.ott.OneTimeTokenService;
+import org.springframework.stereotype.Component;
+
+@Component
+public class HardcodedOneTimeTokenService implements OneTimeTokenService {
+
+    private static final String HARDCODED_OTP = "123456";
+
+    // Key: submitted OTP/token value
+    // Value: token record containing the username
+    private final Map<String, OneTimeToken> tokensByValue = new ConcurrentHashMap<>();
+
+    @Override
+    public OneTimeToken generate(GenerateOneTimeTokenRequest request) {
+        String username = request.getUsername();
+
+        OneTimeToken token = new DefaultOneTimeToken(
+                HARDCODED_OTP,
+                username,
+                Instant.now().plusSeconds(300)
+        );
+
+        tokensByValue.put(token.getTokenValue(), token);
+
+        System.out.println("OTP for " + username + ": " + token.getTokenValue());
+
+        return token;
+    }
+
+    @Override
+    public OneTimeToken consume(OneTimeTokenAuthenticationToken authenticationToken) {
+        String submittedToken = authenticationToken.getTokenValue();
+
+        OneTimeToken storedToken = tokensByValue.remove(submittedToken);
+
+        if (storedToken == null) {
+            return null;
+        }
+
+        if (storedToken.getExpiresAt().isBefore(Instant.now())) {
+            return null;
+        }
+
+        // This is where the username is available.
+        String username = storedToken.getUsername();
+
+        System.out.println("Verifying OTP for user: " + username);
+
+        return storedToken;
+    }
+}
