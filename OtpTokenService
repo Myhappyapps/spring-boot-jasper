@@ -1,0 +1,54 @@
+package com.example.demo;
+
+import java.time.Instant;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
+import org.springframework.security.authentication.ott.DefaultOneTimeToken;
+import org.springframework.security.authentication.ott.GenerateOneTimeTokenRequest;
+import org.springframework.security.authentication.ott.InvalidOneTimeTokenException;
+import org.springframework.security.authentication.ott.OneTimeToken;
+import org.springframework.security.authentication.ott.OneTimeTokenService;
+import org.springframework.stereotype.Component;
+
+@Component
+public class HardcodedOneTimeTokenService implements OneTimeTokenService {
+
+    private static final String HARDCODED_OTP = "123456";
+
+    private final Map<String, String> tokensByUsername = new ConcurrentHashMap<>();
+
+    @Override
+    public OneTimeToken generate(GenerateOneTimeTokenRequest request) {
+        String username = request.getUsername();
+
+        var token = new DefaultOneTimeToken(
+                HARDCODED_OTP,
+                username,
+                Instant.now().plusSeconds(300)
+        );
+
+        tokensByUsername.put(username, HARDCODED_OTP);
+
+        // For this learning example only.
+        System.out.println("OTP for " + username + ": " + HARDCODED_OTP);
+
+        return token;
+    }
+
+    @Override
+    public OneTimeToken consume(OneTimeToken token) {
+        String username = token.getUsername();
+        String expected = tokensByUsername.remove(username);
+
+        if (expected == null || !expected.equals(token.getTokenValue())) {
+            throw new InvalidOneTimeTokenException("Invalid one-time token");
+        }
+
+        return new DefaultOneTimeToken(
+                token.getTokenValue(),
+                username,
+                Instant.now()
+        );
+    }
+}
