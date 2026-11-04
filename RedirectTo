@@ -1,0 +1,70 @@
+package com.example.demo;
+
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.web.access.AccessDeniedHandler;
+import org.springframework.security.web.savedrequest.HttpSessionRequestCache;
+import org.springframework.security.web.savedrequest.RequestCache;
+
+import java.io.IOException;
+
+public class MfaMissingOttAccessDeniedHandler implements AccessDeniedHandler {
+
+    private final RequestCache requestCache = new HttpSessionRequestCache();
+
+    @Override
+    public void handle(
+            HttpServletRequest request,
+            HttpServletResponse response,
+            AccessDeniedException accessDeniedException
+    ) throws IOException {
+
+        // Preserve GET /oauth2server/oauth2/authorize?client_id=...&redirect_uri=...
+        requestCache.saveRequest(request, response);
+
+        String redirectUrl = request.getContextPath()
+                + "/otp?factor.type=ott&factor.reason=missing";
+
+        response.sendRedirect(redirectUrl);
+    }
+}
+
+.exceptionHandling(exceptions -> exceptions
+    .defaultAuthenticationEntryPointFor(
+        new LoginUrlAuthenticationEntryPoint("/login"),
+        new MediaTypeRequestMatcher(MediaType.TEXT_HTML)
+    )
+    .defaultAccessDeniedHandlerFor(
+        new MfaMissingOttAccessDeniedHandler(),
+        new MediaTypeRequestMatcher(MediaType.TEXT_HTML)
+    )
+)
+
+
+№###
+
+@Bean
+public SavedRequestAwareAuthenticationSuccessHandler otpSuccessHandler() {
+    SavedRequestAwareAuthenticationSuccessHandler handler =
+            new SavedRequestAwareAuthenticationSuccessHandler();
+
+    handler.setDefaultTargetUrl("/");
+    handler.setAlwaysUseDefaultTargetUrl(false);
+
+    return handler;
+}
+
+
+#######
+
+.oneTimeTokenLogin(ott -> ott
+    .loginPage("/otp")
+    .loginProcessingUrl("/otp/login")
+    .tokenGeneratingUrl("/otp/generate")
+    .tokenService(emailOtpTokenService)
+    .tokenGenerationSuccessHandler(emailOtpHandler)
+    .successHandler(otpSuccessHandler())
+)
+
