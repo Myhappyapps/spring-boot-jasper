@@ -1,0 +1,70 @@
+package com.sbi.oauth2server.config;
+
+import java.util.HashSet;
+import java.util.Set;
+
+import org.springframework.security.authentication.AuthenticationProvider;
+import org.springframework.security.authentication.ott.InvalidOneTimeTokenException;
+import org.springframework.security.authentication.ott.OneTimeToken;
+import org.springframework.security.authentication.ott.OneTimeTokenAuthentication;
+import org.springframework.security.authentication.ott.OneTimeTokenAuthenticationToken;
+import org.springframework.security.authentication.ott.OneTimeTokenService;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.FactorGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.stereotype.Component;
+
+@Component
+public class MergingOneTimeTokenAuthenticationProvider
+        implements AuthenticationProvider {
+
+    private final OneTimeTokenService oneTimeTokenService;
+    private final UserDetailsService userDetailsService;
+
+    public MergingOneTimeTokenAuthenticationProvider(
+            OneTimeTokenService oneTimeTokenService,
+            UserDetailsService userDetailsService
+    ) {
+        this.oneTimeTokenService = oneTimeTokenService;
+        this.userDetailsService = userDetailsService;
+    }
+
+    @Override
+    public Authentication authenticate(Authentication authentication) {
+        OneTimeToken consumedToken =
+                oneTimeTokenService.consume((OneTimeTokenAuthenticationToken) authentication);
+
+        if (consumedToken == null) {
+            throw new InvalidOneTimeTokenException("Invalid or expired one-time token");
+        }
+
+        UserDetails user = userDetailsService.loadUserByUsername(
+                consumedToken.getUsername()
+        );
+
+        Set<GrantedAuthority> authorities = new HashSet<>(user.getAuthorities());
+
+        // Preserve authorities from the earlier LDAP/password login.
+        Authentication previous = SecurityContextHolder.getContext().getAuthentication();
+
+        if (previous != null && previous.isAuthenticated()) {
+            authorities.addAll(previous.getAuthorities());
+        }
+
+        // Ensure the OTP factor is present.
+        authorities.add(
+                FactorGrantedAuthority.withAuthority(FactorGrantedAuthority.OTT_AUTHORITY)
+                        .build()
+        );
+
+        return OneTimeTokenAuthentication.authenticated(user, authorities);
+    }
+
+    @Override
+    public boolean supports(Class<?> authentication) {
+        return OneTimeTokenAuthenticationToken.class.isAssignableFrom(authentication);
+    }
+}
