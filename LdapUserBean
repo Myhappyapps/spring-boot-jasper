@@ -1,0 +1,18 @@
+@Bean
+public UserDetailsService userDetailsService(
+        BaseLdapPathContextSource contextSource,
+        LdapUserDetailsMapper ldapUserDetailsMapper
+) {
+    FilterBasedLdapUserSearch userSearch = new FilterBasedLdapUserSearch(
+            "ou=people",
+            "(uid={0})",
+            contextSource
+    );
+
+    LdapUserDetailsService userDetailsService =
+            new LdapUserDetailsService(userSearch);
+
+    userDetailsService.setUserDetailsMapper(ldapUserDetailsMapper);
+
+    return userDetailsService;
+}
