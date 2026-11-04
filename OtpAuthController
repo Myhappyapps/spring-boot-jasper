@@ -1,0 +1,45 @@
+package com.sbi.oauth2server.controller;
+
+import java.io.IOException;
+import java.time.Duration;
+
+import org.springframework.security.authentication.ott.GenerateOneTimeTokenRequest;
+import org.springframework.security.authentication.ott.OneTimeToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.web.authentication.ott.OneTimeTokenGenerationSuccessHandler;
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.PostMapping;
+
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+
+@Controller
+public class OtpResendController {
+
+    private final EmailOtpTokenService emailOtpTokenService;
+    private final OneTimeTokenGenerationSuccessHandler emailOtpHandler;
+
+    public OtpResendController(
+            EmailOtpTokenService emailOtpTokenService,
+            OneTimeTokenGenerationSuccessHandler emailOtpHandler
+    ) {
+        this.emailOtpTokenService = emailOtpTokenService;
+        this.emailOtpHandler = emailOtpHandler;
+    }
+
+    @PostMapping("/otp/resend")
+    public void resendOtp(
+            HttpServletRequest request,
+            HttpServletResponse response,
+            Authentication authentication
+    ) throws IOException {
+
+        String username = authentication.getName();
+
+        OneTimeToken token = emailOtpTokenService.generate(
+                new GenerateOneTimeTokenRequest(username, Duration.ofMinutes(5))
+        );
+
+        emailOtpHandler.handle(request, response, token);
+    }
+}
