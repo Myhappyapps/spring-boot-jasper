@@ -1,0 +1,170 @@
+sftp:
+  host: sftp.example.com
+  port: 22
+  username: tax-uploader
+  password: ${SFTP_PASSWORD}
+  remote-directory: /outbound/tax-files
+  private-key: ${SFTP_PRIVATE_KEY:}
+  private-key-passphrase: ${SFTP_PRIVATE_KEY_PASSPHRASE:}
+
+
+package com.example.taxport.config;
+
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.integration.file.remote.session.CachingSessionFactory;
+import org.springframework.integration.file.remote.session.SessionFactory;
+import org.springframework.integration.sftp.session.DefaultSftpSessionFactory;
+
+@Configuration
+public class SftpConfig {
+
+    @Bean
+    public SessionFactory<org.apache.sshd.sftp.client.SftpClient.DirEntry> sftpSessionFactory(
+            @Value("${sftp.host}") String host,
+            @Value("${sftp.port}") int port,
+            @Value("${sftp.username}") String username,
+            @Value("${sftp.password:}") String password,
+            @Value("${sftp.private-key:}") String privateKey,
+            @Value("${sftp.private-key-passphrase:}") String privateKeyPassphrase
+    ) {
+        DefaultSftpSessionFactory factory = new DefaultSftpSessionFactory(true);
+        factory.setHost(host);
+        factory.setPort(port);
+        factory.setUser(username);
+
+        if (!password.isBlank()) {
+            factory.setPassword(password);
+        }
+
+        if (!privateKey.isBlank()) {
+            factory.setPrivateKey(privateKey);
+            factory.setPrivateKeyPassphrase(privateKeyPassphrase);
+        }
+
+        // Do NOT use this in production unless you control and trust the host key.
+        factory.setAllowUnknownKeys(false);
+        factory.setTestSession(true);
+
+        return new CachingSessionFactory<>(factory);
+    }
+}
+
+package com.example.taxport.service;
+
+import org.springframework.integration.support.MessageBuilder;
+import org.springframework.integration.file.FileHeaders;
+import org.springframework.integration.file.remote.RemoteFileTemplate;
+import org.springframework.messaging.Message;
+import org.springframework.stereotype.Service;
+
+import java.io.File;
+import java.nio.file.Path;
+
+@Service
+public class TaxFileSftpService {
+
+    private final RemoteFileTemplate<org.apache.sshd.sftp.client.SftpClient.DirEntry> sftpTemplate;
+    private final String remoteDirectory;
+
+    public TaxFileSftpService(
+            RemoteFileTemplate<org.apache.sshd.sftp.client.SftpClient.DirEntry> sftpTemplate,
+            @org.springframework.beans.factory.annotation.Value("${sftp.remote-directory}")
+            String remoteDirectory
+    ) {
+        this.sftpTemplate = sftpTemplate;
+        this.remoteDirectory = remoteDirectory;
+    }
+
+    public void upload(Path taxFile) {
+        File file = taxFile.toFile();
+
+        Message<File> message = MessageBuilder
+                .withPayload(file)
+                .setHeader(FileHeaders.REMOTE_DIRECTORY, remoteDirectory)
+                .setHeader(FileHeaders.FILENAME, file.getName())
+                .build();
+
+        sftpTemplate.send(message);
+    }
+}
+
+
+package com.example.taxport.config;
+
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.integration.dsl.IntegrationFlow;
+import org.springframework.integration.file.remote.session.SessionFactory;
+import org.springframework.integration.file.support.FileExistsMode;
+import org.springframework.integration.sftp.dsl.Sftp;
+
+@Configuration
+public class SftpOutboundFlowConfig {
+
+    @Bean
+    public IntegrationFlow taxFileSftpFlow(
+            SessionFactory<org.apache.sshd.sftp.client.SftpClient.DirEntry> sftpSessionFactory,
+            @org.springframework.beans.factory.annotation.Value("${sftp.remote-directory}")
+            String remoteDirectory
+    ) {
+        return IntegrationFlow
+                .from("taxFileToSftpChannel")
+                .handle(Sftp.outboundAdapter(sftpSessionFactory, FileExistsMode.REPLACE)
+                        .remoteDirectory(remoteDirectory)
+                        .useTemporaryFileName(true)
+                        .autoCreateDirectory(true))
+                .get();
+    }
+}
+
+package com.example.taxport.service;
+
+import org.springframework.integration.support.MessageBuilder;
+import org.springframework.integration.file.FileHeaders;
+import org.springframework.messaging.MessageChannel;
+import org.springframework.stereotype.Service;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+
+@Service
+public class TaxFileGenerator {
+
+    private static final DateTimeFormatter DATE_FORMAT =
+            DateTimeFormatter.ofPattern("yyyyMMdd");
+
+    private final MessageChannel taxFileToSftpChannel;
+    private final Path workingDirectory;
+
+    public TaxFileGenerator(
+            MessageChannel taxFileToSftpChannel,
+            @org.springframework.beans.factory.annotation.Value("${app.tax-files-dir:./tax-files}")
+            String workingDirectory
+    ) throws Exception {
+        this.taxFileToSftpChannel = taxFileToSftpChannel;
+        this.workingDirectory = Path.of(workingDirectory);
+        Files.createDirectories(this.workingDirectory);
+    }
+
+    public Path generateAndPush(String taxData) throws Exception {
+        String fileName = "tax-file-%s.csv".formatted(LocalDate.now().format(DATE_FORMAT));
+        Path localFile = workingDirectory.resolve(fileName);
+
+        Files.writeString(localFile, taxData);
+
+        taxFileToSftpChannel.send(
+                MessageBuilder.withPayload(localFile.toFile())
+                        .setHeader(FileHeaders.FILENAME, fileName)
+                        .build()
+        );
+
+        return localFile;
+    }
+}
+
+
+
