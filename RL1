@@ -1,0 +1,32 @@
+package com.example.gateway.filter;
+
+import org.springframework.http.HttpHeaders;
+import org.springframework.web.server.ServerWebExchange;
+
+final class ClientIpResolver {
+
+    private static final String[] PROXY_HEADERS = {
+            "X-Forwarded-For",
+            "X-Real-IP",
+            "CF-Connecting-IP"
+    };
+
+    private ClientIpResolver() {
+    }
+
+    static String resolve(ServerWebExchange exchange) {
+        HttpHeaders headers = exchange.getRequest().getHeaders();
+
+        for (String header : PROXY_HEADERS) {
+            String value = headers.getFirst(header);
+
+            if (value != null && !value.isBlank()) {
+                return value.split(",")[0].trim();
+            }
+        }
+
+        return exchange.getRequest().getRemoteAddress() == null
+                ? null
+                : exchange.getRequest().getRemoteAddress().getAddress().getHostAddress();
+    }
+}
