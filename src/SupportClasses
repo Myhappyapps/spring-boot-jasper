@@ -1,0 +1,82 @@
+package com.example.gateway.filter;
+
+import org.springframework.http.HttpHeaders;
+import org.springframework.web.server.ServerWebExchange;
+
+final class ClientIpResolver {
+
+    private static final String[] PROXY_HEADERS = {
+            "X-Forwarded-For",
+            "X-Real-IP",
+            "CF-Connecting-IP"
+    };
+
+    private ClientIpResolver() {
+    }
+
+    static String resolve(ServerWebExchange exchange) {
+        HttpHeaders headers = exchange.getRequest().getHeaders();
+
+        for (String header : PROXY_HEADERS) {
+            String value = headers.getFirst(header);
+
+            if (value != null && !value.isBlank()) {
+                return value.split(",")[0].trim();
+            }
+        }
+
+        return exchange.getRequest().getRemoteAddress() == null
+                ? null
+                : exchange.getRequest().getRemoteAddress().getAddress().getHostAddress();
+    }
+}
+
+package com.example.gateway.filter;
+
+import java.net.InetAddress;
+
+final class IpCidrMatcher {
+
+    private IpCidrMatcher() {
+    }
+
+    static boolean matches(InetAddress clientIp, String cidr) {
+        String[] parts = cidr.split("/", 2);
+
+        if (parts.length != 2) {
+            return false;
+        }
+
+        try {
+            InetAddress network = InetAddress.getByName(parts[0]);
+            int prefix = Integer.parseInt(parts[1]);
+
+            byte[] ip = clientIp.getAddress();
+            byte[] networkIp = network.getAddress();
+
+            if (ip.length != networkIp.length) {
+                return false;
+            }
+
+            int wholeBytes = prefix / 8;
+            int remainingBits = prefix % 8;
+
+            for (int i = 0; i < wholeBytes; i++) {
+                if (ip[i] != networkIp[i]) {
+                    return false;
+                }
+            }
+
+            if (remainingBits == 0) {
+                return true;
+            }
+
+            int mask = 0xFF << (8 - remainingBits);
+            return (ip[wholeBytes] & mask) == (networkIp[wholeBytes] & mask);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+}
+
+
