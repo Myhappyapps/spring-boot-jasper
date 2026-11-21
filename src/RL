@@ -1,0 +1,104 @@
+package com.example.gateway.filter;
+
+import com.example.gateway.config.GatewayClientProperties;
+import com.example.gateway.filter.ApiKeyAuthenticationFilter;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
+import io.github.bucket4j.Bandwidth;
+import io.github.bucket4j.Bucket;
+import io.github.bucket4j.ConsumptionProbe;
+import org.springframework.cloud.gateway.filter.GatewayFilterChain;
+import org.springframework.cloud.gateway.filter.GlobalFilter;
+import org.springframework.core.Ordered;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Component;
+import org.springframework.web.server.ServerWebExchange;
+import reactor.core.publisher.Mono;
+
+import java.time.Duration;
+import java.util.concurrent.TimeUnit;
+
+@Component
+public class ClientRateLimitFilter implements GlobalFilter, Ordered {
+
+    private final GatewayClientProperties properties;
+    private final Cache<String, Bucket> buckets;
+
+    public ClientRateLimitFilter(GatewayClientProperties properties) {
+        this.properties = properties;
+
+        var cacheConfig = properties.rateLimitCache();
+
+        this.buckets = Caffeine.newBuilder()
+                .maximumSize(cacheConfig.maximumSize())
+                .expireAfterAccess(
+                        properties.cacheExpiration().toMillis(),
+                        TimeUnit.MILLISECONDS
+                )
+                .build();
+    }
+
+    @Override
+    public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
+        String clientId = exchange.getAttribute(ApiKeyAuthenticationFilter.CLIENT_ID_ATTRIBUTE);
+
+        if (clientId == null) {
+            return chain.filter(exchange);
+        }
+
+        GatewayClientProperties.RateLimit policy = properties
+                .apiClients()
+                .get(clientId)
+                .rateLimit();
+
+        Bucket bucket = buckets.get(clientId, key -> createBucket(policy));
+        ConsumptionProbe probe = bucket.tryConsumeAndReturnRemaining(1);
+
+        if (!probe.isConsumed()) {
+            long retryAfterSeconds = TimeUnit.NANOSECONDS.toSeconds(
+                    probe.getNanosToWaitForRefill()
+            );
+
+            exchange.getResponse().getHeaders().add(
+                    "Retry-After",
+                    String.valueOf(Math.max(1, retryAfterSeconds))
+            );
+            exchange.getResponse().getHeaders().add("X-RateLimit-Remaining", "0");
+            exchange.getResponse().getHeaders().add("X-RateLimit-Limit",
+                    String.valueOf(policy.capacity()));
+
+            exchange.getResponse().setStatusCode(HttpStatus.TOO_MANY_REQUESTS);
+            return exchange.getResponse().setComplete();
+        }
+
+        exchange.getResponse().getHeaders().add(
+                "X-RateLimit-Remaining",
+                String.valueOf(probe.getRemainingTokens())
+        );
+        exchange.getResponse().getHeaders().add(
+                "X-RateLimit-Limit",
+                String.valueOf(policy.capacity())
+        );
+
+        return chain.filter(exchange);
+    }
+
+    private Bucket createBucket(GatewayClientProperties.RateLimit policy) {
+        Bandwidth bandwidth = Bandwidth.builder()
+                .capacity(policy.capacity())
+                .refillIntervally(
+                        policy.refillTokens(),
+                        Duration.parse(policy.refillDuration())
+                )
+                .build();
+
+        return Bucket.builder()
+                .addLimit(bandwidth)
+                .build();
+    }
+
+    @Override
+    public int getOrder() {
+        return -100;
+    }
+}
