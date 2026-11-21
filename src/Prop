@@ -1,0 +1,31 @@
+gateway:
+  api-clients:
+    client-a:
+      api-key: "${CLIENT_A_API_KEY}"
+      ip-whitelist:
+        - "203.0.113.10"
+        - "10.0.0.0/8"
+      rate-limit:
+        capacity: 100
+        refill-tokens: 50
+        refill-duration: PT1M
+    client-b:
+      api-key: "${CLIENT_B_API_KEY}"
+      ip-whitelist:
+        - "198.51.100.0/24"
+      rate-limit:
+        capacity: 500
+        refill-tokens: 100
+        refill-duration: PT1M
+    client-c:
+      api-key: "${CLIENT_C_API_KEY}"
+      ip-whitelist: []
+      rate-limit:
+        capacity: 20
+        refill-tokens: 5
+        refill-duration: PT1M
+
+  # Add client-d through client-l similarly.
+  rate-limit-cache:
+    maximum-size: 10000
+    expire-after-access: PT30M
