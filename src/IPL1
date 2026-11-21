@@ -1,0 +1,76 @@
+package com.example.gateway.filter;
+
+import com.example.gateway.config.GatewayClientProperties;
+import com.example.gateway.filter.ApiKeyAuthenticationFilter;
+import org.springframework.cloud.gateway.filter.GatewayFilterChain;
+import org.springframework.cloud.gateway.filter.GlobalFilter;
+import org.springframework.core.Ordered;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Component;
+import org.springframework.web.server.ServerWebExchange;
+import reactor.core.publisher.Mono;
+
+import java.net.InetAddress;
+import java.util.List;
+
+@Component
+public class ClientIpWhitelistFilter implements GlobalFilter, Ordered {
+
+    private final GatewayClientProperties properties;
+
+    public ClientIpWhitelistFilter(GatewayClientProperties properties) {
+        this.properties = properties;
+    }
+
+    @Override
+    public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
+        String clientId = exchange.getAttribute(ApiKeyAuthenticationFilter.CLIENT_ID_ATTRIBUTE);
+
+        if (clientId == null) {
+            return chain.filter(exchange);
+        }
+
+        List<String> allowedIps = properties
+                .apiClients()
+                .get(clientId)
+                .ipWhitelist();
+
+        // An empty list means the client is allowed from any IP.
+        if (allowedIps.isEmpty()) {
+            return chain.filter(exchange);
+        }
+
+        String clientIp = ClientIpResolver.resolve(exchange);
+
+        if (clientIp == null || !isAllowed(clientIp, allowedIps)) {
+            exchange.getResponse().setStatusCode(HttpStatus.FORBIDDEN);
+            exchange.getResponse().getHeaders().add("X-Error-Reason", "IP not allowed");
+            return exchange.getResponse().setComplete();
+        }
+
+        return chain.filter(exchange);
+    }
+
+    private boolean isAllowed(String clientIp, List<String> allowedIps) {
+        try {
+            InetAddress address = InetAddress.getByName(clientIp);
+
+            return allowedIps.stream().anyMatch(rule -> {
+                try {
+                    return rule.contains("/")
+                            ? IpCidrMatcher.matches(address, rule)
+                            : InetAddress.getByName(rule).equals(address);
+                } catch (Exception e) {
+                    return false;
+                }
+            });
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    @Override
+    public int getOrder() {
+        return -200;
+    }
+}
