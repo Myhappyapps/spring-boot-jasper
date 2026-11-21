@@ -1,0 +1,48 @@
+package com.example.gateway.config;
+
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Positive;
+import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.validation.annotation.Validated;
+
+import java.time.Duration;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+@Validated
+@ConfigurationProperties(prefix = "gateway")
+public record GatewayClientProperties(
+        Map<String, ApiClient> apiClients,
+        RateLimitCache rateLimitCache
+) {
+
+    public GatewayClientProperties {
+        apiClients = apiClients == null ? Map.of() : Map.copyOf(apiClients);
+    }
+
+    public record ApiClient(
+            @NotBlank String apiKey,
+            List<String> ipWhitelist,
+            RateLimit rateLimit
+    ) {
+        public ApiClient {
+            ipWhitelist = ipWhitelist == null ? List.of() : List.copyOf(ipWhitelist);
+        }
+    }
+
+    public record RateLimit(
+            @Positive long capacity,
+            @Positive long refillTokens,
+            @NotBlank String refillDuration
+    ) {}
+
+    public record RateLimitCache(
+            @Positive long maximumSize,
+            @NotBlank String expireAfterAccess
+    ) {}
+
+    public Duration cacheExpiration() {
+        return Duration.parse(rateLimitCache.expireAfterAccess());
+    }
+}
