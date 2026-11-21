@@ -1,0 +1,47 @@
+package com.example.gateway.filter;
+
+import java.net.InetAddress;
+
+final class IpCidrMatcher {
+
+    private IpCidrMatcher() {
+    }
+
+    static boolean matches(InetAddress clientIp, String cidr) {
+        String[] parts = cidr.split("/", 2);
+
+        if (parts.length != 2) {
+            return false;
+        }
+
+        try {
+            InetAddress network = InetAddress.getByName(parts[0]);
+            int prefix = Integer.parseInt(parts[1]);
+
+            byte[] ip = clientIp.getAddress();
+            byte[] networkIp = network.getAddress();
+
+            if (ip.length != networkIp.length) {
+                return false;
+            }
+
+            int wholeBytes = prefix / 8;
+            int remainingBits = prefix % 8;
+
+            for (int i = 0; i < wholeBytes; i++) {
+                if (ip[i] != networkIp[i]) {
+                    return false;
+                }
+            }
+
+            if (remainingBits == 0) {
+                return true;
+            }
+
+            int mask = 0xFF << (8 - remainingBits);
+            return (ip[wholeBytes] & mask) == (networkIp[wholeBytes] & mask);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+}
